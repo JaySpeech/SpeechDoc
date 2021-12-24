@@ -7,7 +7,7 @@
 设计一个简单的IRM语音增强网络。
 
 ```python
-self.mask = torch.nn.Linear(257, 257)
+self.mask = torch.nn.Linear(256, 257)
 self.activation = torch.nn.Sigmoid()
 
 mask = self.mask(mix_mag)  # (B,T,F)
@@ -17,7 +17,7 @@ mask = self.activation(mask)
 经过训练后，将参数保存为onnx格式，导出的时候需要将Batch这个维度忽略。
 
 ```python
-x = torch.rand(10, 257)
+x = torch.rand(10, 256)
 x = x.to(device)
 
 #define input and output nodes, can be customized
@@ -45,7 +45,7 @@ param文件内容如下，用另外一个形式表述了网络架构。
 7767517
 3 3
 Input            x                        0 1 x
-InnerProduct     Gemm_0                   1 1 x 3 0=257 1=1 2=66049
+InnerProduct     Gemm_0                   1 1 x 3 0=257 1=1 2=65792
 Sigmoid          Sigmoid_1                1 1 3 y
 ```
 
@@ -72,7 +72,7 @@ set_property(TARGET ncnn_test PROPERTY FOLDER "my examples")
 NCNN读取网络和参数，进行计算，关键代码如下：
 
 ```cpp
-ncnn::Mat in = ncnn::Mat(257, NUM_BLOCK);
+ncnn::Mat in = ncnn::Mat(256, NUM_BLOCK);
 
 ncnn::Net net;
 net.load_param("./my_examples/ncnn_test.param");
@@ -97,7 +97,7 @@ void* libc_handle = dlopen("libc.so.6", RTLD_NOW);
 借助NCNN可以加快深度学习模型的部署，但是转换、移植和调试起来相对会困难一些。NCNN的核心内容就是各种OP的实现，
 下面将对NCNN的Linear OP进行分析和抽取，从pytorch直接到嵌入式实现。
 
-### 2.1 pytorch Linear
+### 2.1 pytorch Linear和权重导出
 
 [pytorch Linear官方文档](https://pytorch.org/docs/stable/generated/torch.nn.Linear.html)
 
@@ -109,20 +109,124 @@ void* libc_handle = dlopen("libc.so.6", RTLD_NOW);
 print(model.mask.weight.shape)
 print(model.bias.weight.shape)
 
-#torch.Size([257, 257])
+#torch.Size([256, 257])
 #torch.Size([257])
 ```
 
+权重直接导出为二进制文件。
 
+```python
+if os.path.exists("mask_param.bin"):
+        os.remove("mask_param.bin")
 
+mask_weight = np.float32(model.mask.weight.detach().cpu().numpy())
+mask_weight = list(mask_weight.reshape(-1))
+print("mask_weight len:" + str(len(mask_weight)))
+data = struct.pack('f'*len(mask_weight),*mask_weight)
+with open("mask_param.bin",'ab+') as f:
+    f.write(data)
+
+mask_bias = np.float32(model.mask.bias.detach().cpu().numpy())
+mask_bias = list(mask_bias.reshape(-1))
+print("mask_bias len:" + str(len(mask_bias)))
+data = struct.pack('f'*len(mask_bias),*mask_bias)
+with open("mask_param.bin",'ab+') as f:
+    f.write(data)
+```
+
+### 2.2 Linear权重导入和C语言实现
+
+Linear结构体初始化：
+
+```c
+Linear *Linear_create(int in_features, int out_features, bool bias_used, int _elemsize){
+    Linear* linear = (Linear *)malloc(sizeof(Linear));
+    if(linear == NULL){
+        return NULL;
+    }
+
+    linear->in_features = in_features;
+    linear->out_features = out_features;
+    linear->bias_used = bias_used;
+    linear->elemsize = _elemsize;
+
+    linear->weight_mat = Mat_2D_create(in_features,out_features,_elemsize);
+    linear->bias_mat = Mat_1D_create(out_features,_elemsize);
+
+    return linear;
+}
+```
+
+全部中导入方法如下，二进制传递参数比较直接，后面可以考虑采用结构化数据进行参数传递。
+
+```c
+int Linear_load_variables(Linear *linear, char* file){
+    if(linear == NULL){
+        return -1;
+    }
+
+    FILE * mask_bin_file = fopen("./mask_param.bin","rb");
+    if(mask_bin_file == NULL){
+        return -1;
+    }
+
+    fread(linear->weight_mat->data,sizeof(float),linear->in_features*linear->out_features,mask_bin_file);
+    //Mat_2D_float_printf(linear->weight_mat);
+
+    if(linear->bias_used == true){
+        fread(linear->bias_mat->data,sizeof(float),linear->out_features,mask_bin_file);
+        //Mat_1D_float_printf(linear->bias_mat);
+    }
+
+    fclose(mask_bin_file);
+
+    return 0;
+}
+```
+
+Linear为矩阵乘法运算，实现起来比较简单。
+
+```c
+int Linear_process(Linear *linear, Mat *input, Mat* output){
+    if(linear == NULL){
+        return -1;
+    }
+
+    if(input->dims == 2 && output->dims ==2 && \
+        input->w == linear->in_features && output->w == linear->out_features) {
+
+        #pragma omp parallel for num_threads(NUM_THREADS)
+        for (int j = 0; j < input->h; j++) {
+
+            const float* m = (float *)Mat_row(input, j);
+            float* outptr = (float *)Mat_row(output, j);
+
+            for (int p = 0; p < linear->out_features; p++) {
+                const float* kptr = (const float*)linear->weight_mat->data + input->w * p;
+
+                float sum = 0.f;
+
+                if(linear->bias_used){
+                    sum = *((float *)linear->bias_mat->data + p);
+                }
+
+                for (int i = 0; i < input->w; i++){
+                    sum += m[i] * kptr[i];
+                }
+
+                outptr[p] = sum;
+            }
+        }
+        return 0;
+    }
+
+    return -1;
+}
+```
 
 ## 3.Linear优化
 
-pytorch linear dump脚本 
-
-导出参数 中间交换格式
-linear c语言实现 
-arm优化实现 mat pack
+arm优化实现 mat pack bf16
 
 
 
