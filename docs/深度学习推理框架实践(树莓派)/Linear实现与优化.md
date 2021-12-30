@@ -134,7 +134,7 @@ with open("mask_param.bin",'ab+') as f:
     f.write(data)
 ```
 
-### 2.2 Linear权重导入和C语言实现
+### 2.2 Linear权重导入
 
 Linear结构体初始化：
 
@@ -184,7 +184,11 @@ int Linear_load_variables(Linear *linear, char* file){
 }
 ```
 
+### 2.3 Linear实现
+
 Linear为矩阵乘法运算，实现起来比较简单。
+
+这里假设输入为`(8,32)`，输出为`(8,16)`，权重大小为`(16,32)`。
 
 ```c
 int Linear_process(Linear *linear, Mat *input, Mat* output){
@@ -198,10 +202,13 @@ int Linear_process(Linear *linear, Mat *input, Mat* output){
         #pragma omp parallel for num_threads(NUM_THREADS)
         for (int j = 0; j < input->h; j++) {
 
+            // 每次输入和输出各取一行数据地址
             const float* m = (float *)Mat_row(input, j);
             float* outptr = (float *)Mat_row(output, j);
 
+            // 16次循环，每次循环进行32次乘加操作
             for (int p = 0; p < linear->out_features; p++) {
+                // 取权重的一行
                 const float* kptr = (const float*)linear->weight_mat->data + input->w * p;
 
                 float sum = 0.f;
@@ -210,6 +217,7 @@ int Linear_process(Linear *linear, Mat *input, Mat* output){
                     sum = *((float *)linear->bias_mat->data + p);
                 }
 
+                // 输入和权重进行32次乘加操作
                 for (int i = 0; i < input->w; i++){
                     sum += m[i] * kptr[i];
                 }
@@ -219,15 +227,454 @@ int Linear_process(Linear *linear, Mat *input, Mat* output){
         }
         return 0;
     }
-
     return -1;
 }
 ```
 
-## 3.Linear优化
+### 2.4 Linear NEON优化
 
-arm优化实现 mat pack bf16
+Linear的优化分为两种情况，一种是可以packing的，也就是`h`维度能被4整除，一种是实时性的`h`为1。
 
+#### 2.4.1 Packing优化
+
+```c
+Mat *in = Mat_2D_create(32,8,sizeof(float),1);
+float* ptr0 = (float*)in->data;
+int start_num = 0;
+for(int i = 0; i < in->h; i++){
+    for(int j = 0; j < in->w; j++){
+        *ptr0 = start_num++;
+        ptr0++;
+    }
+}
+
+float weight[16*32];
+for(int i = 0; i < 16; i++){
+    for(int j = 0; j < 32; j++){
+        weight[i*32+j] = j;
+        //printf("%g ",weight[i*32+j]);
+    }
+    //printf("\n");
+}
+
+Linear_ARM *linear = Linear_arm_create(32,16,false,true);
+Linear_arm_init_variables(linear,weight,NULL);
+Linear_arm_process(linear,in);
+Mat*out = Linear_arm_get_output(linear);
+```
+
+首先，输入数据会进行pack。
+
+pack前：
+
+```c
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 
+64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 
+96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 
+128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159 
+160 161 162 163 164 165 166 167 168 169 170 171 172 173 174 175 176 177 178 179 180 181 182 183 184 185 186 187 188 189 190 191 
+192 193 194 195 196 197 198 199 200 201 202 203 204 205 206 207 208 209 210 211 212 213 214 215 216 217 218 219 220 221 222 223 
+224 225 226 227 228 229 230 231 232 233 234 235 236 237 238 239 240 241 242 243 244 245 246 247 248 249 250 251 252 253 254 255 
+```
+
+pack后：
+
+```c
+0 32 64 96 
+1 33 65 97 
+2 34 66 98 
+3 35 67 99 
+4 36 68 100 
+5 37 69 101 
+6 38 70 102 
+7 39 71 103 
+8 40 72 104 
+9 41 73 105 
+10 42 74 106 
+11 43 75 107 
+12 44 76 108 
+13 45 77 109 
+14 46 78 110 
+15 47 79 111 
+16 48 80 112 
+17 49 81 113 
+18 50 82 114 
+19 51 83 115 
+20 52 84 116 
+21 53 85 117 
+22 54 86 118 
+23 55 87 119 
+24 56 88 120 
+25 57 89 121 
+26 58 90 122 
+27 59 91 123 
+28 60 92 124 
+29 61 93 125 
+30 62 94 126 
+31 63 95 127
+
+128 160 192 224 
+129 161 193 225 
+130 162 194 226 
+131 163 195 227 
+132 164 196 228 
+133 165 197 229 
+134 166 198 230 
+135 167 199 231 
+136 168 200 232 
+137 169 201 233 
+138 170 202 234 
+139 171 203 235 
+140 172 204 236 
+141 173 205 237 
+142 174 206 238 
+143 175 207 239 
+144 176 208 240 
+145 177 209 241 
+146 178 210 242 
+147 179 211 243 
+148 180 212 244 
+149 181 213 245 
+150 182 214 246 
+151 183 215 247 
+152 184 216 248 
+153 185 217 249 
+154 186 218 250 
+155 187 219 251 
+156 188 220 252 
+157 189 221 253 
+158 190 222 254 
+159 191 223 255
+```
+
+权重内存分布：
+
+```c
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+```
+
+为了加快运算，使用neon进行优化进行4float乘加操作。
+
+```c
+// in4_mat->h 2 数据已经分成两大块了
+for (int j = 0; j < linear->in4_mat->h; j++) {
+    // 取输出0,1数据块首地址
+    float* outptr = (float *)Mat_row(linear->out4_mat,j);
+    // out_features为16 该循环需要计算4行的16个结果，未优化前是一次求1行16个结果
+    for (int p = 0; p < linear->out_features; p++) {
+        // 0,32,64,...,480 每次32个float型，也就是权重的一行 weight_mat总长512
+        const float* kptr = (const float*)linear->weight_mat->data + linear->in_features * p;
+        // 取输入0,1数据块首地址
+        const float* m = (float *)Mat_row(linear->in4_mat,j);
+        float32x4_t _sum = vdupq_n_f32(0.f); // 将value复制4份存到返回的寄存器中
+
+        if(linear->bias_used == true){
+            _sum = vdupq_n_f32(bias_data[p]);
+        }
+
+        // in_features 32 一次循环完成4个输入数据和1个权重乘加计算，32个循环完成4个结果的输出
+        for (int i = 0; i < linear->in_features; i++){
+            float32x4_t _val = vld1q_f32(m);  // 从数组中依次load4个元素存到寄存器中
+            float32x4_t _k = vdupq_n_f32(kptr[0]);
+            _sum = vmlaq_f32(_sum, _val, _k); // 4float分别乘加
+
+            m += 4;
+            kptr += 1;
+        }
+
+        vst1q_f32(outptr, _sum); // _sum数据写到outptr中，这里为4
+        outptr += 4;
+    }
+}
+```
+
+```c
+Step1:
+取输入前4行的第0个数据 0 32 64 96      取权重的第0行的第0个数据，分别做乘法
+取输入前4行的第1个数据 1 33 65 97      取权重的第0行的第1个数据，分别做乘法
+...
+取输入前4行的第31个数据 31 63 95 127   取权重的第0行的第31个数据，分别做乘法
+
+将上面的每一步的结果进行加法，可以得到前4行输入和权重第0行的乘加结果(4)。
+
+Step2:
+取输入前4行的第0个数据 0 32 64 96      取权重的第1行的第0个数据，分别做乘法
+取输入前4行的第1个数据 1 33 65 97      取权重的第1行的第1个数据，分别做乘法
+...
+取输入前4行的第31个数据 31 63 95 127   取权重的第1行的第31个数据，分别做乘法
+
+...
+
+上述操作进行16次后，就可以得到结果(4,16)。
+```
+
+#### 2.4.2 实时优化
+
+一般在语音场景中，pack的优化并不实用，一般语音实时场景中，`h`为1。
+
+下面的例子输入为`(1,32)`，输出为`(1,17)`，权重为`(17,32)`。
+
+```c
+Mat *in = Mat_2D_create(32,1,sizeof(float),1);
+float* ptr0 = (float*)in->data;
+int start_num = 0;
+for(int i = 0; i < in->h; i++){
+    for(int j = 0; j < in->w; j++){
+        *ptr0 = start_num++;
+        ptr0++;
+    }
+}
+float weight[17*32];
+for(int i = 0; i < 17; i++){
+    for(int j = 0; j < 32; j++){
+        weight[i*32+j] = j;
+        //printf("%g ",weight[i*32+j]);
+    }
+    //printf("\n");
+}
+
+Linear_ARM *linear = Linear_arm_create(32,17,false,true);
+Linear_arm_init_variables(linear,weight,NULL);
+Linear_arm_process(linear,in);
+Mat*out = Linear_arm_get_output(linear);
+```
+
+输入矩阵内存：
+
+```c
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+```
+
+权重矩阵为17行如下数据：
+
+```c
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 
+```
+
+先来看一下权重中能被4整除的16行如何处理。
+
+```c
+const float* weight_data_ptr = (float *)linear->weight_mat->data;
+float* top_blob = (float *)linear->out_mat->data;
+
+// out_features 17  nn_num_output 4  remain_num_output_start 16
+int nn_num_output = linear->out_features >> 2;
+int remain_num_output_start = nn_num_output << 2;
+
+// 每次处理4行权重
+for(int pp = 0; pp < nn_num_output; pp++){
+
+    int p = pp * 4;
+
+    float sum0 = 0.f;
+    float sum1 = 0.f;
+    float sum2 = 0.f;
+    float sum3 = 0.f;
+
+    if(linear->bias_used) {
+        sum0 = bias_data[p];
+        sum1 = bias_data[p + 1];
+        sum2 = bias_data[p + 2];
+        sum3 = bias_data[p + 3];
+    }
+
+    const float* w0 = weight_data_ptr + input->w * p;           // 取权重0,4,8,12行起始地址
+    const float* w1 = weight_data_ptr + input->w * (p + 1);     // 取权重1,5,9,13行起始地址
+    const float* w2 = weight_data_ptr + input->w * (p + 2);     // 取权重2,6,10,14行起始地址
+    const float* w3 = weight_data_ptr + input->w * (p + 3);     // 取权重3,7,11,15行起始地址
+
+    float32x4_t _sum0 = vdupq_n_f32(0.f);
+    float32x4_t _sum1 = vdupq_n_f32(0.f);
+    float32x4_t _sum2 = vdupq_n_f32(0.f);
+    float32x4_t _sum3 = vdupq_n_f32(0.f);
+
+    const float* m = (float *)input->data;
+
+    int nn = input->w >> 2;
+    int remain = input->w & 3;
+
+    // input数据每次处理4个，循环展开，一次循环进行4行权重的计算
+    for(; nn > 0; nn--) {
+        // 输入和权重每一行的长度都是一样的
+        float32x4_t _m = vld1q_f32(m);
+
+        float32x4_t _w0 = vld1q_f32(w0);
+        _sum0 = vmlaq_f32(_sum0, _m, _w0);
+
+        float32x4_t _w1 = vld1q_f32(w1);
+        _sum1 = vmlaq_f32(_sum1, _m, _w1);
+
+        float32x4_t _w2 = vld1q_f32(w2);
+        _sum2 = vmlaq_f32(_sum2, _m, _w2);
+
+        float32x4_t _w3 = vld1q_f32(w3);
+        _sum3 = vmlaq_f32(_sum3, _m, _w3);
+
+        m += 4;
+        w0 += 4;
+        w1 += 4;
+        w2 += 4;
+        w3 += 4;
+    }
+
+    // 不能进行neon操作的使用普通操作
+    for(; remain > 0; remain--) {
+        sum0 += *m * *w0;
+        sum1 += *m * *w1;
+        sum2 += *m * *w2;
+        sum3 += *m * *w3;
+
+        m++;
+        w0++;
+        w1++;
+        w2++;
+        w3++;
+    }
+
+    // _sum0是floatx4类型，需要将里面的4个float型相加
+    // vadd_f32 float32x2_t + float32x2_t
+    float32x2_t _sum0ss = vadd_f32(vget_low_f32(_sum0), vget_high_f32(_sum0)); 
+    float32x2_t _sum1ss = vadd_f32(vget_low_f32(_sum1), vget_high_f32(_sum1));
+    float32x2_t _sum2ss = vadd_f32(vget_low_f32(_sum2), vget_high_f32(_sum2));
+    float32x2_t _sum3ss = vadd_f32(vget_low_f32(_sum3), vget_high_f32(_sum3));
+
+    // vpadd_f32 相邻元素相加 _sum0ss两个float相加 _sum1ss两个float相加
+    float32x2_t _sum01ss = vpadd_f32(_sum0ss, _sum1ss);
+    float32x2_t _sum23ss = vpadd_f32(_sum2ss, _sum3ss);
+
+    sum0 += vget_lane_f32(_sum01ss, 0);
+    sum1 += vget_lane_f32(_sum01ss, 1);
+    sum2 += vget_lane_f32(_sum23ss, 0);
+    sum3 += vget_lane_f32(_sum23ss, 1);
+
+    top_blob[p] = sum0;
+    top_blob[p + 1] = sum1;
+    top_blob[p + 2] = sum2;
+    top_blob[p + 3] = sum3;        
+}
+```
+
+简单梳理下上述代码的流程。
+
+```c
+Step1:
+输入取 0 1 2 3   权重取第0行 0 1 2 3  乘加
+                权重取第1行 0 1 2 3  乘加
+                权重取第2行 0 1 2 3  乘加
+                权重取第3行 0 1 2 3  乘加
+
+Step2:
+输入取 4 5 6 7   权重取第0行 4 5 6 7  乘加
+                权重取第1行 4 5 6 7  乘加
+                权重取第2行 4 5 6 7  乘加
+                权重取第3行 4 5 6 7  乘加
+
+...
+
+这样就可以一个循环完成4个输出。
+
+16行权重可以分为4次完成。
+
+```
+
+还剩余一行无法进行neon操作，接下来的一行如何优化呢？
+
+```c
+for (int p = remain_num_output_start; p < linear->out_features; p++) {
+    float sum = 0.f;
+
+    if(linear->bias_used)
+        sum = bias_data[p];
+
+    const float* w = weight_data_ptr + input->w * p;
+
+    // 每次处理8个float型
+    float32x4_t _sum = vdupq_n_f32(0.f);
+    float32x4_t _sum2 = vdupq_n_f32(0.f);
+
+    const float* m = (float *)input->data;
+
+    int nn = input->w >> 3;    //整除8，这里为4
+    int remain = input->w & 7;
+
+    if(nn > 0) {
+        asm volatile(
+            "0:                             \n"
+            "pld        [%1, #256]          \n"   // m(输入数据)预取256bytes
+            "vld1.f32   {d0-d3}, [%1 :128]! \n"   // 从m(输入数据)读取8float(:128表示字节对齐)
+            "pld        [%2, #256]          \n"   // 从w(权重数据)预取256bytes
+            "vld1.f32   {d4-d7}, [%2]!      \n"   // 从w(权重数据)读取8float
+            "vmla.f32   %q3, q0, q2         \n"   // q0存放了m(输入数据)前4float q2存放w(权重数据)前4float _sum += q0*q2
+            "subs       %0, #1              \n"   // nn-=1
+            "vmla.f32   %q4, q1, q3         \n"   // q1存放了m(输入数据)后4float q3存放w(权重数据)后4float _sum2 += q1*q3
+            "bne        0b                  \n"
+            : "=r"(nn),   // %0
+            "=r"(m),    // %1
+            "=r"(w),    // %2
+            "=w"(_sum), // %3
+            "=w"(_sum2) // %4
+            : "0"(nn),
+            "1"(m),
+            "2"(w),
+            "3"(_sum),
+            "4"(_sum2)
+            : "cc", "memory", "q0", "q1", "q2", "q3");  
+            // "cc"表示内联汇编代码修改了标志寄存器
+            // "memory"表示汇编代码对输入和输出操作数执行内存读取或写入操作（读写参数列表之一的变量指向的内存）
+    }
+
+    for(; remain > 0; remain--) {
+        sum += *m * *w;
+
+        m++;
+        w++;
+    }
+
+    // float32x4_t + float32x4_t
+    _sum = vaddq_f32(_sum, _sum2);
+
+    // float32x2_t + float32x2_t
+    float32x2_t _sumss = vadd_f32(vget_low_f32(_sum), vget_high_f32(_sum));
+
+    // 两半的结果是一样的，取一半就好了
+    _sumss = vpadd_f32(_sumss, _sumss);
+    sum += vget_lane_f32(_sumss, 0);
+
+    top_blob[p] = sum;
+}
+```
+
+#### 2.4.3 运行结果
+
+```c
+(1,256) * (257,256) = (1,257) rt(cpu 1.5g)
+normal 138us 
+arm_1 55us 
+arm_2 28us 
+arm_4 20us
+
+(1000,256) * (257,256) = (1000,257) packing(cpu dynamic)
+normal 161614us 
+arm_1 73794us 
+arm_2 47922us 
+arm_4 20970us
+```
 
 
 
