@@ -157,7 +157,7 @@ Linear *Linear_create(int in_features, int out_features, bool bias_used, int _el
 }
 ```
 
-全部中导入方法如下，二进制传递参数比较直接，后面可以考虑采用结构化数据进行参数传递。
+权重导入方法如下，二进制传递参数比较直接，后面可以考虑采用结构化数据进行参数传递。
 
 ```c
 int Linear_load_variables(Linear *linear, char* file){
