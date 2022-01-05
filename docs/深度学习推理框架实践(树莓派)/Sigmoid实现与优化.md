@@ -169,7 +169,7 @@ static inline float32x4_t sigmoid_ps(float32x4_t _v) {
 Packing的处理方式：
 
 ```c
-int size = input->w * input->h;
+int size = input->w * input->h; //能被4整除
 
 for (int q = 0; q < input->c; q++) {
     float* ptr = (float*)Mat_channel(input,q);

@@ -16,5 +16,6 @@
     - [Linear实现与优化](docs/深度学习推理框架实践(树莓派)/Linear实现与优化.md)
     - [Sigmoid实现与优化](docs/深度学习推理框架实践(树莓派)/Sigmoid实现与优化.md)
     - [LSTM实现与优化](docs/深度学习推理框架实践(树莓派)/LSTM实现与优化.md)
+    - [Tanh实现与优化](docs/深度学习推理框架实践(树莓派)/Tanh实现与优化.md)
 
 ---
