@@ -54,7 +54,7 @@ return adata;
 
 为什么要将`udata`转换成`(unsigned char **)`？`udata`地址往下跳8个字节，预留8个字节存储未对齐的地址。
 
-```c++
+```cpp
 // 采用类比的方式解释
 unsigned char *a = new char[5];
 // a + 1 表示从a指针指向的地址走了1个字节, 为啥是1个字节

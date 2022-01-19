@@ -33,7 +33,7 @@ torch_out = torch.onnx.export(model, x, "ncnn_test.onnx", input_names=input_name
 
 使用`onnx-simplifier`进行简化。
 
-```shell
+```powershell
 pip install onnx-simplifier
 python -m onnxsim ncnn_test.onnx ncnn_test_op.onnx 
 ```
@@ -49,7 +49,7 @@ python -m onnxsim ncnn_test.onnx ncnn_test_op.onnx
 
 param文件内容如下，用另外一个形式表述了网络架构。
 
-```shell
+```powershell
 7767517
 3 5
 Input            x                        0 1 x

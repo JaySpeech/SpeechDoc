@@ -4,13 +4,13 @@
 
 下载openCV：
 
-```shell
+```powershell
 https://github.com/Itseez/opencv/archive/2.4.13.zip
 ```
 
 编译依赖：
 
-```shell
+```powershell
 #安装编译工具
 sudo apt-get install build-essential
 #安装依赖包
@@ -21,7 +21,7 @@ sudo apt-get install python-dev python-numpy libtbb2 libtbb-dev libjpeg-dev libp
 
 编译安装：
 
-```shell
+```powershell
 #打开文件夹"opencv-2.4.13"：
 cd opencv-2.4.13
 
@@ -49,7 +49,7 @@ note: suggested alternative: ‘AVFMT_NOFILE’
 
 安装后会生成如下文件：
 
-```shell
+```powershell
 ls /usr/local/lib/ 
 libopencv_calib3d.so            libopencv_highgui.so.2.4       libopencv_ocl.so.2.4.13
 libopencv_calib3d.so.2.4        libopencv_highgui.so.2.4.13    libopencv_photo.so
@@ -110,7 +110,7 @@ Cflags: -I${includedir_old} -I${includedir_new}
 
 pkgconfig配置：
 
-```shell
+```powershell
 #配置环境
 
 #将opencv的库加入到路径，从而让系统可以找到
@@ -160,7 +160,7 @@ int main( )
 
 编译测试：
 
-```shell
+```powershell
 g++ Dis.cpp -o Dis `pkg-config --cflags --libs opencv`
 ```
 
@@ -170,13 +170,13 @@ g++ Dis.cpp -o Dis `pkg-config --cflags --libs opencv`
 
 下载NCNN：
 
-```shell
+```powershell
 git clone https://github.com/Tencent/ncnn.git
 ```
 
 依赖环境：
 
-```shell
+```powershell
 * g++
 * cmake
 * protocol buffer (protobuf) headers files and protobuf compiler
@@ -186,19 +186,19 @@ git clone https://github.com/Tencent/ncnn.git
 
 在ubuntu、树莓派官方推荐安装方法(不考虑)：
 
-```shell
+```powershell
 sudo apt install build-essential git cmake libprotobuf-dev protobuf-compiler libvulkan-dev vulkan-utils libopencv-dev
 ```
 
 在这里暂时我们不使用vulkan，并且opencv使用源码的方式安装，安装命令如下：
 
-```shell
+```powershell
 sudo apt install build-essential git cmake libprotobuf-dev protobuf-compiler
 ```
 
 ubuntu编译命令：
 
-```shell
+```powershell
 cd ncnn
 mkdir build && cd build
 cmake ..
@@ -208,7 +208,7 @@ make install
 
 树莓派编译命令：
 
-```shell
+```powershell
 cd <ncnn-root-dir>
 mkdir -p build
 cd build
@@ -219,13 +219,13 @@ make install
 
 编译发生如下错误：
 
-```shell
+```powershell
 undefined reference to symbol 'dlopen@@GLIBC_2.4'
 ```
 
 修改CMakeLists增加dl依赖即可：
 
-```shell
+```powershell
 if(PI3)
     target_compile_options(ncnn PRIVATE -march=native -mfpu=neon -mfloat-abi=hard)
     target_compile_definitions(ncnn PRIVATE __ARM_NEON __ANDROID__)
@@ -257,7 +257,7 @@ endif()
 
 ncnn_add_layer.cmake根据平台自动生成layer_declaration.h：
 
-```c++
+```cpp
 namespace ncnn {
 class InnerProduct_final : virtual public InnerProduct, virtual public InnerProduct_arm
 {

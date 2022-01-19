@@ -35,13 +35,13 @@ torch_out = torch.onnx.export(model, x, "ncnn_test.onnx", input_names=input_name
 
 将模型的onnx格式转成ncnn格式。
 
-```shell
+```powershell
 ./onnx2ncnn ncnn_test.onnx ncnn_test.param ncnn_test.bin
 ```
 
 param文件内容如下，用另外一个形式表述了网络架构。
 
-```shell
+```powershell
 7767517
 3 3
 Input            x                        0 1 x
@@ -51,14 +51,14 @@ Sigmoid          Sigmoid_1                1 1 3 y
 
 在NCNN源码中加入模型测试工程：
 
-```shell
+```powershell
 # 顶层CMakeLists
 add_subdirectory(my_examples)
 ```
 
 my_examples目录下添加自己写的测试代码和CMakeLists。
 
-```shell
+```powershell
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../src)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/../src)
 

@@ -39,7 +39,7 @@ torch_out = torch.onnx.export(model, x, "ncnn_test.onnx", input_names=input_name
 
 param文件内容如下，用另外一个形式表述了网络架构。
 
-```shell
+```powershell
 7767517
 5 5
 Input            x                        0 1 x
@@ -579,7 +579,7 @@ for (int g = 0; g < conv1d->groups; g++) {
 
 ## 5.运行结果
 
-```shell
+```powershell
 Conv1D
 (256,1000) -> (257,1000)
 normal 449616us arm_1 347188us arm_2 195457us arm_4 122237us
