@@ -136,7 +136,7 @@ with open("mask_param.bin",'ab+') as f:
 
 ### 2.2 Linear权重导入
 
-Linear结构体初始化：
+`Linear`结构体初始化：
 
 ```c
 Linear *Linear_create(int in_features, int out_features, bool bias_used, int _elemsize){

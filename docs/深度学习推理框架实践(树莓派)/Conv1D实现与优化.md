@@ -87,7 +87,7 @@ with open("mask_param.bin",'ab+') as f:
 
 ### 2.2 Conv1D权重导入
 
-Linear结构体初始化：
+`Conv1D`结构体初始化：
 
 ```c
 Conv1D *Conv1D_create(int in_channels, int out_channels, int kernel_w, \

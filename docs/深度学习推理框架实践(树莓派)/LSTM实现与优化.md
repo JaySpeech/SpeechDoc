@@ -161,7 +161,7 @@ with open("mask_param.bin",'ab+') as f:
 
 ### 2.3 LSTM权重导入
 
-LSTM结构体初始化：
+`LSTM`结构体初始化：
 
 ```c
 LSTM *LSTM_create(int input_size, int hidden_size, bool bias_used){
