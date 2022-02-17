@@ -7,7 +7,7 @@
 设计一个简单的IRM语音增强网络。
 
 ```python
-self.mask = torch.nn.LSTM(256, 257, num_layers=1, bidirectional=False, batch_first=False)
+self.mask = torch.nn.LSTM(256, 257, num_layers=1, bidirectional=False, batch_first=True)
 self.activation = torch.nn.Sigmoid()
 
 mask = self.mask(mix_mag)  # (B,T,F)
@@ -53,8 +53,8 @@ param文件内容如下，用另外一个形式表述了网络架构。
 7767517
 3 5
 Input            x                        0 1 x
-LSTM             LSTM_9                   1 3 x 46 44 45 0=257 1=263168 2=0
-Sigmoid          Sigmoid_11               1 1 46 y
+LSTM             LSTM_10                  1 3 x 48 45 46 0=257 1=263168 2=0
+Sigmoid          Sigmoid_13               1 1 48 y
 ```
 ![](img/LSTM实现与优化/lstm_ncnn.png ':size=25%')
 
@@ -77,14 +77,14 @@ Sigmoid 层输出`0`到`1`之间的数值，描述每个部分有多少量可以
 
 LSTM 拥有三个门，来保护和控制细胞状态。
 
-* 忘记门，决定我们会从细胞状态中丢弃什么信息。
+* 忘记门，决定我们会从细胞状态$C_{t-1}$中丢弃什么信息。来自先前隐藏状态$h_{t-1}$和来自当前输入$x_{t}$的信息通过`sigmoid`函数传递。值介于0和1之间。越接近0越容易遗忘，越接近1则意味着要保留。($C_{t-1}$*忘记门来决定丢弃的程度)
 
 ![](img/LSTM实现与优化/lstm_01.png ':size=50%')
 
 * 更新门，确定什么样的新信息被存放在细胞状态中。
 
-    这里包含两个部分。第一，sigmoid 层称 “输入门层” 决定什么值我们将要更新。
-    然后，一个 tanh 层创建一个新的候选值向量，$\tilde{C}_t$，会被加入到状态中。下一步，我们会讲这两个信息来产生对状态的更新。
+    这里包含两个部分。首先，`sigmoid`层称 “输入门层” 决定什么值我们将要更新。
+    然后，一个 tanh 层创建一个新的候选值向量，$\tilde{C}_t$，会被加入到状态中。下一步，我们会将这两个信息来产生对状态的更新。
 
 ![](img/LSTM实现与优化/lstm_02.png ':size=50%')
 
@@ -96,7 +96,7 @@ LSTM 拥有三个门，来保护和控制细胞状态。
 
 * 输出门
 
-    最终，我们需要确定输出什么值。
+    最后，根据当前细胞状态$C_{t}$、先前隐藏状态$h_{t-1}$和来自当前输入$x_{t}$最终确定输出值。
 
 ![](img/LSTM实现与优化/lstm_04.png ':size=50%')
 
@@ -135,28 +135,33 @@ print(model.mask.bias_hh_l0.shape)
 权重导出为二进制文件。
 
 ```python
-weight_ih_l0 = np.float32(model.mask.weight_ih_l0.detach().cpu().numpy())
-weight_ih_l0 = list(weight_ih_l0.reshape(-1))
-print("weight_ih_l0 len:" + str(len(weight_ih_l0)))
-data = struct.pack('f'*len(weight_ih_l0),*weight_ih_l0)
-with open("mask_param.bin",'ab+') as f:
-    f.write(data)
+def lstm_dump(module_dump:torch.nn.Module,save_file:String):
+    if os.path.exists(save_file):
+        os.remove(save_file)
 
-weight_hh_l0 = np.float32(model.mask.weight_hh_l0.detach().cpu().numpy())
-weight_hh_l0 = list(weight_hh_l0.reshape(-1))
-print("weight_hh_l0 len:" + str(len(weight_hh_l0)))
-data = struct.pack('f'*len(weight_hh_l0),*weight_hh_l0)
-with open("mask_param.bin",'ab+') as f:
-    f.write(data)
+    print("------dump "+ save_file+'------')
 
-# note:bias在这里进行相加
-bias_h = model.mask.bias_ih_l0 + model.mask.bias_hh_l0
-bias_h = np.float32(bias_h.detach().cpu().numpy())
-bias_h = list(bias_h.reshape(-1))
-print("bias_hh_l0 len:" + str(len(bias_h)))
-data = struct.pack('f'*len(bias_h),*bias_h)
-with open("mask_param.bin",'ab+') as f:
-    f.write(data)
+    weight_ih_l0 = np.float32(module_dump.weight_ih_l0.detach().cpu().numpy())
+    weight_ih_l0 = list(weight_ih_l0.reshape(-1))
+    print("weight_ih_l0 len:" + str(len(weight_ih_l0)))
+    data = struct.pack('f'*len(weight_ih_l0),*weight_ih_l0)
+    with open(save_file,'ab+') as f:
+        f.write(data)
+
+    weight_hh_l0 = np.float32(module_dump.weight_hh_l0.detach().cpu().numpy())
+    weight_hh_l0 = list(weight_hh_l0.reshape(-1))
+    print("weight_hh_l0 len:" + str(len(weight_hh_l0)))
+    data = struct.pack('f'*len(weight_hh_l0),*weight_hh_l0)
+    with open(save_file,'ab+') as f:
+        f.write(data)
+
+    bias_h = module_dump.bias_ih_l0 + module_dump.bias_hh_l0
+    bias_h = np.float32(bias_h.detach().cpu().numpy())
+    bias_h = list(bias_h.reshape(-1))
+    print("bias_hh_l0 len:" + str(len(bias_h)))
+    data = struct.pack('f'*len(bias_h),*bias_h)
+    with open(save_file,'ab+') as f:
+        f.write(data)
 ```
 
 ### 2.3 LSTM权重导入

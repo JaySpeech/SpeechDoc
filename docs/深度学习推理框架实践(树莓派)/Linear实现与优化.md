@@ -116,22 +116,25 @@ print(model.bias.weight.shape)
 权重直接导出为二进制文件。
 
 ```python
-if os.path.exists("mask_param.bin"):
-        os.remove("mask_param.bin")
+def linear_dump(module_dump:torch.nn.Module,save_file:String):
+    if os.path.exists(save_file):
+        os.remove(save_file)
 
-mask_weight = np.float32(model.mask.weight.detach().cpu().numpy())
-mask_weight = list(mask_weight.reshape(-1))
-print("mask_weight len:" + str(len(mask_weight)))
-data = struct.pack('f'*len(mask_weight),*mask_weight)
-with open("mask_param.bin",'ab+') as f:
-    f.write(data)
+    print("------dump "+ save_file+'------')
 
-mask_bias = np.float32(model.mask.bias.detach().cpu().numpy())
-mask_bias = list(mask_bias.reshape(-1))
-print("mask_bias len:" + str(len(mask_bias)))
-data = struct.pack('f'*len(mask_bias),*mask_bias)
-with open("mask_param.bin",'ab+') as f:
-    f.write(data)
+    linear_weight = np.float32(module_dump.weight.detach().cpu().numpy())
+    linear_weight = list(linear_weight.reshape(-1))
+    print("linear_weight len:" + str(len(linear_weight)))
+    data = struct.pack('f'*len(linear_weight),*linear_weight)
+    with open(save_file,'ab+') as f:
+        f.write(data)
+
+    linear_bias = np.float32(module_dump.bias.detach().cpu().numpy())
+    linear_bias = list(linear_bias.reshape(-1))
+    print("linear_bias len:" + str(len(linear_bias)))
+    data = struct.pack('f'*len(linear_bias),*linear_bias)
+    with open(save_file,'ab+') as f:
+        f.write(data)
 ```
 
 ### 2.2 Linear权重导入

@@ -70,19 +70,25 @@ print(model.mask.bias.shape)
 导出方法和Linear一样：
 
 ```python
-mask_weight = np.float32(model.mask.weight.detach().cpu().numpy())
-mask_weight = list(mask_weight.reshape(-1))
-print("mask_weight len:" + str(len(mask_weight)))
-data = struct.pack('f'*len(mask_weight),*mask_weight)
-with open("mask_param.bin",'ab+') as f:
-    f.write(data)
+def conv1d_dump(module_dump:torch.nn.Module,save_file:String):
+    if os.path.exists(save_file):
+        os.remove(save_file)
 
-mask_bias = np.float32(model.mask.bias.detach().cpu().numpy())
-mask_bias = list(mask_bias.reshape(-1))
-print("mask_bias len:" + str(len(mask_bias)))
-data = struct.pack('f'*len(mask_bias),*mask_bias)
-with open("mask_param.bin",'ab+') as f:
-    f.write(data)
+    print("------dump "+ save_file+'------')
+
+    conv1d_weight = np.float32(module_dump.weight.detach().cpu().numpy())
+    conv1d_weight = list(conv1d_weight.reshape(-1))
+    print("conv1d_weight len:" + str(len(conv1d_weight)))
+    data = struct.pack('f'*len(conv1d_weight),*conv1d_weight)
+    with open(save_file,'ab+') as f:
+        f.write(data)
+
+    conv1d_bias = np.float32(module_dump.bias.detach().cpu().numpy())
+    conv1d_bias = list(conv1d_bias.reshape(-1))
+    print("conv1d_bias len:" + str(len(conv1d_bias)))
+    data = struct.pack('f'*len(conv1d_bias),*conv1d_bias)
+    with open(save_file,'ab+') as f:
+        f.write(data)
 ```
 
 ### 2.2 Conv1D权重导入
@@ -583,8 +589,10 @@ for (int g = 0; g < conv1d->groups; g++) {
 Conv1D
 (256,1000) -> (257,1000)
 normal 449616us arm_1 347188us arm_2 195457us arm_4 122237us
+输入输出都使用256还能进一步加速
 
 Depthwise Conv1D
 (257,1000) -> (257,1000)
 normal 19819us normal_2 15357us norm_4 9270us
+
 ```

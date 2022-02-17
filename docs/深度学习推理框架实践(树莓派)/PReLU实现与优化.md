@@ -34,12 +34,18 @@ print(model.mask.repeat0_block0_prelu1.weight.shape)
 导出方法为：
 
 ```c
-mask_weight = np.float32(module_dump.weight.detach().cpu().numpy())
-mask_weight = list(mask_weight.reshape(-1))
-print("prelu_weight len:" + str(len(mask_weight)))
-data = struct.pack('f'*len(mask_weight),*mask_weight)
-with open(save_file,'ab+') as f:
-    f.write(data)
+def prelu_dump(module_dump:torch.nn.Module,save_file:String):
+    if os.path.exists(save_file):
+        os.remove(save_file)
+
+    print("------dump "+ save_file+'------')
+
+    prelu_weight = np.float32(module_dump.weight.detach().cpu().numpy())
+    prelu_weight = list(prelu_weight.reshape(-1))
+    print("prelu_weight len:" + str(len(prelu_weight)))
+    data = struct.pack('f'*len(prelu_weight),*prelu_weight)
+    with open(save_file,'ab+') as f:
+        f.write(data)
 ```
 
 ### 1.3 PReLU权重导入
